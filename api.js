@@ -13,6 +13,7 @@ const http = require('http').createServer(app);
 // const serverless = require('serverless-http');
 // const router = express.Router();
 const bodyParser = require('body-parser');
+const cors = require('cors');
 const io = require('socket.io')(http);
 
 // to read and write to file
@@ -24,7 +25,7 @@ const readFile = util.promisify(fs.readFile);
 /*
     // scores.json
     [
-        { id: int, userId: string, win: int, losse: int, tie: int, points: int},
+        { id(uniqe): int, userId: string, win: int, losse: int, tie: int, points: int},
     ]
 
     // users.json
@@ -32,12 +33,15 @@ const readFile = util.promisify(fs.readFile);
         live: int
         totalCount: int,
         lastLogin: int
-        people: [userId: string, username: string, password: string, token: string]
+        people: [userId(uniqe): string, username(uniqe): string, password: string],
+        logedIn: [userId(uniqe): string, token]
     }
 */
 
 let JsonScores = require('./src/files/scores.json');
 let JsonUsers = require('./src/files/users.json');
+
+JsonScores.live = 0;
 /* 
 
 
@@ -46,6 +50,7 @@ let JsonUsers = require('./src/files/users.json');
 
 */ 
 
+app.use(cors()); 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded( { extended: true } ));
 // app.use('/.netlify/functions/api', router)// bound the router into the app, and define where the router is tied to
@@ -75,9 +80,50 @@ Route functions
 
 */
 
+function makeid(length) {
+    var result           = '';
+    var characters       = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz0123456789';
+    var charactersLength = characters.length;
+    for ( var i = 0; i < length; i++ ) {
+        result += characters.charAt(Math.floor(Math.random() * charactersLength));
+    }
+    return result;
+}
+
 
 app.get('/', (req, res) => {
-    res.send('<h1>Hello world</h1>');
+    res.send('<h1>Your Wellcome to Play!</h1>');
+});
+
+// app.get('/registor', (req, res) => {
+//     return res.sendStatus(200);
+// });
+
+app.post('/registor', (req, res) => {
+    let users = JsonUsers.people;
+    // check if username is there
+    let x = users.find(user => {
+        if (user.username === req.body.username) {
+            return true;
+        }
+    })
+
+    if (x) {
+        return res.status(200).json({status: 501, httpMean: 'Not Implemented', message: 'user exist'});
+    }
+
+    users.push({userId: makeid(6), username: req.body.username, password: req.body.newPassword});
+    // JsonUsers.people = users;
+
+    fs.writeFile('./src/files/users.json', JSON.stringify(JsonUsers), 'utf8', (err, data) => {
+        if (err) {
+            JsonUsers.people.pop();
+            return res.status(200).json({status: 500, httpMean: 'Internal Server Error', message: 'Write error'});
+        }
+
+        return res.status(201).json({status: 201, mes: 'Created'});
+    })
+    
 });
 
 io.on('connection', (socket) => {
@@ -86,7 +132,7 @@ io.on('connection', (socket) => {
     console.log('a user connected. no #' + JsonUsers.live);
     // JsonUsers.totalCount++;
     // JsonUsers.lastLogin = new Date();
-    fs.writeFile('./src/files/scores.json', JSON.stringify(JsonUsers), 'utf8', (err, data) => {
+    fs.writeFile('./src/files/users.json', JSON.stringify(JsonUsers), 'utf8', (err, data) => {
         if (err) {
             return console.error(err);
         }
@@ -95,7 +141,7 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('user disconnected');
         JsonUsers.live--;
-        fs.writeFile('./src/files/scores.json', JSON.stringify(JsonUsers), 'utf8', (err, data) => {
+        fs.writeFile('./src/files/users.json', JSON.stringify(JsonUsers), 'utf8', (err, data) => {
             if (err) {
                 return console.error(err);
             }
